@@ -26,10 +26,12 @@
 #include <string.h>
 #include "FreeRTOS.h"
 
-/* USART1 now follows the final standard-AT MQTT uplink route:
- * broker 82.157.204.124:1883, topic fsae/telemetry, payload = raw
- * TelemetryFrame protobuf. USART1 therefore stays in AT/TCP client mode and
- * the business task pushes each encoded protobuf through AT+CIPSEND.
+/* USART1 uplink route is selected by Y100M_DTU_TRANSPARENT_MODE (usart.h):
+ * - 1 (default): USR DTU in MQTT transparent mode owns the broker session
+ *   (bitfsae.com, topic fsae/telemetry). Firmware only writes raw protobuf
+ *   bytes; AT traffic is forbidden on this wire.
+ * - 0: legacy standard-AT route, broker 82.157.204.124:1883, hand-built MQTT
+ *   CONNECT/PUBLISH pushed through AT+CIPSEND.
  */
 #define Y100M_AT_REPLY_BUFFER_SIZE        512U
 #define Y100M_AT_LOG_BUFFER_SIZE          192U
@@ -1268,6 +1270,22 @@ void Y100M_BootstrapOnce(void)
 {
   HAL_StatusTypeDef status;
 
+#if (Y100M_DTU_TRANSPARENT_MODE != 0U)
+  /* The DTU keeps its own MQTT session (auth, heartbeat, reconnect). Sending
+   * any AT byte here would publish that text to fsae/telemetry as payload, so
+   * the whole AT bootstrap is skipped. Publish may start immediately: the DTU
+   * buffers serial data while its network is still coming up.
+   */
+  if (g_y100mBootstrapDone == 0U)
+  {
+    g_y100mBootstrapDone = 1U;
+    g_y100mBootstrapOk = 1U;
+    Y100M_Uart1DrainRx();
+    Y100M_DebugLog("[4G] DTU transparent mode: skip AT bootstrap, uplink enabled\r\n");
+  }
+  return;
+#endif
+
   if (g_y100mBootstrapDone != 0U)
   {
     return;
@@ -1310,6 +1328,18 @@ HAL_StatusTypeDef Y100M_MqttPublish(const uint8_t *payload, uint16_t payload_len
   uint16_t offset;
   HAL_StatusTypeDef status;
   static const uint8_t topic[] = "fsae/telemetry";
+
+#if (Y100M_DTU_TRANSPARENT_MODE != 0U)
+  /* Transparent mode: the DTU publishes every USART1 byte to its configured
+   * topic (fsae/telemetry), so the protobuf payload is sent as-is. No MQTT
+   * PUBLISH framing and no AT+CIPSEND on this route.
+   */
+  if ((payload == NULL) || (payload_length == 0U) || (g_y100mBootstrapOk == 0U))
+  {
+    return HAL_ERROR;
+  }
+  return Y100M_Uart1DmaSend(payload, payload_length, Y100M_AT_CMD_TIMEOUT_MS);
+#endif
 
   Y100M_DebugLog("[4G-PUB] enter mqtt publish\r\n");
 

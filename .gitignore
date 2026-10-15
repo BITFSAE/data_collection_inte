@@ -32,3 +32,8 @@ Thumbs.db
 
 # AI tool local state
 .kilo/
+
+# Local secrets (MQTT/DTU credentials), never commit
+docs/secrets/*.local.md
+# ZCode tool local state
+.zcodeignore
