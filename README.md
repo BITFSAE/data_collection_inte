@@ -333,6 +333,8 @@ Suspension_InfoDef
 
 ## 4G传输——基于protobuf的MQTT订阅
 
+2026-10 起上行硬件换为 USR DTU（MQTT 纯透传模式），服务器为 bitfsae.com（账号鉴权）。DTU 自己维护连接、鉴权和心跳，MCU 只把 protobuf 原始字节写进 USART1。固件用 `usart.h` 里的 `Y100M_DTU_TRANSPARENT_MODE` 开关选择新旧两条路径，DTU 的参数配置和每台设备的 Client ID 分配见 [docs/DTU_MQTT_CONFIG.md](docs/DTU_MQTT_CONFIG.md)。本节其余内容描述的 AT 直连路径（82.157.204.124，无鉴权）是旧路径，保留作对照。
+
 当前 MCU 侧的 4G 发送链路，应当理解为“AT 指令配置 + protobuf 序列化 + USART1 发送”，而不是“MCU 内部完整 MQTT 协议栈”。这点对后续维护非常重要。
 
 也就是说，MCU 当前承担的职责只有三层：

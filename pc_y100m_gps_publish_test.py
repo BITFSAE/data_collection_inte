@@ -18,6 +18,7 @@ Core-Y100M 标准 AT 固件 MQTT Publish 测试脚本。
 """
 
 import io
+import os
 import struct
 import sys
 import threading
@@ -37,10 +38,15 @@ SERIAL_TIMEOUT = 0.2
 
 APN = "CMNET"
 
-MQTT_BROKER = "82.157.204.124"
+MQTT_BROKER = "bitfsae.com"
 MQTT_PORT = 1883
 MQTT_CLIENT_ID = "CoreY100M_GPS_Test_001"
 MQTT_TOPIC = "fsae/telemetry"
+# bitfsae.com 要求账号密码鉴权。用户名默认用车端网关账号；密码不写入仓库，
+# 通过环境变量传入，例如（Git Bash）：
+#   MQTT_USERNAME=vehicle_gateway MQTT_PASSWORD=**** python pc_y100m_gps_publish_test.py
+MQTT_USERNAME = os.environ.get("MQTT_USERNAME", "vehicle_gateway")
+MQTT_PASSWORD = os.environ.get("MQTT_PASSWORD", "")
 
 GPS_SPEED_SEQUENCE = [150, 42, 56]
 PUBLISH_INTERVAL_S = 0.1
@@ -203,11 +209,27 @@ def build_mqtt_connect(client_id: str, keepalive=60) -> bytes:
     variable_header = bytearray()
     variable_header.extend(b"\x00\x04MQTT")
     variable_header.append(0x04)
-    variable_header.append(0x02)
-    variable_header.extend(struct.pack(">H", keepalive))
+
+    connect_flags = 0x02  # clean session
+    payload = bytearray()
 
     client_id_bytes = client_id.encode("utf-8")
-    payload = struct.pack(">H", len(client_id_bytes)) + client_id_bytes
+    payload.extend(struct.pack(">H", len(client_id_bytes)) + client_id_bytes)
+
+    # MQTT 3.1.1 payload 顺序：client_id → username → password，
+    # 对应 connect flags 的 0x80 / 0x40 位。
+    if MQTT_USERNAME:
+        username_bytes = MQTT_USERNAME.encode("utf-8")
+        connect_flags |= 0x80
+        payload.extend(struct.pack(">H", len(username_bytes)) + username_bytes)
+    if MQTT_PASSWORD:
+        password_bytes = MQTT_PASSWORD.encode("utf-8")
+        connect_flags |= 0x40
+        payload.extend(struct.pack(">H", len(password_bytes)) + password_bytes)
+
+    variable_header.append(connect_flags)
+    variable_header.extend(struct.pack(">H", keepalive))
+
     remaining = len(variable_header) + len(payload)
 
     stream = io.BytesIO()
@@ -423,6 +445,11 @@ def mqtt_publish_loop():
 
 def main():
     global ser, recv_thread_running
+
+    if not MQTT_PASSWORD:
+        log("MQTT_PASSWORD 未设置：bitfsae.com 要求账号密码鉴权，拒绝继续", "ERR")
+        log("用法: MQTT_PASSWORD=<密码> python pc_y100m_gps_publish_test.py", "ERR")
+        return 1
 
     try:
         ser = serial.Serial(
