@@ -26,12 +26,10 @@
 #include <string.h>
 #include "FreeRTOS.h"
 
-/* USART1 uplink route is selected by Y100M_DTU_TRANSPARENT_MODE (usart.h):
- * - 1 (default): USR DTU in MQTT transparent mode owns the broker session
- *   (bitfsae.com, topic fsae/telemetry). Firmware only writes raw protobuf
- *   bytes; AT traffic is forbidden on this wire.
- * - 0: legacy standard-AT route, broker 82.157.204.124:1883, hand-built MQTT
- *   CONNECT/PUBLISH pushed through AT+CIPSEND.
+/* USART1 now follows the final standard-AT MQTT uplink route:
+ * broker 82.157.204.124:1883, topic fsae/telemetry, payload = raw
+ * TelemetryFrame protobuf. USART1 therefore stays in AT/TCP client mode and
+ * the business task pushes each encoded protobuf through AT+CIPSEND.
  */
 #define Y100M_AT_REPLY_BUFFER_SIZE        512U
 #define Y100M_AT_LOG_BUFFER_SIZE          192U
@@ -43,9 +41,9 @@
 #define Y100M_AT_PDP_TIMEOUT_MS         15000U
 #define Y100M_AT_MQTT_CONNACK_TIMEOUT_MS 15000U
 #define Y100M_UART3_LOG_TIMEOUT_MS      1000U
-#define Y100M_MQTT_BROKER               "82.157.204.124"
+#define Y100M_MQTT_BROKER               /*"82.157.204.124"*/ "bitfsae.com"//新网址
 #define Y100M_MQTT_PORT                 1883U
-#define Y100M_MQTT_CLIENT_ID            "STM32_DATA_COLLECTION"
+#define Y100M_MQTT_CLIENT_ID            /*"STM32_DATA_COLLECTION"*/ "vehicle_01" //新客户端ID
 /* MQTT TX must hold the MQTT fixed header, topic header/name, and one protobuf
  * payload. The thermal summary path has already reached 271 bytes on wire, so
  * keep this comfortably above the former 256-byte bring-up buffer while still
@@ -965,9 +963,18 @@ static HAL_StatusTypeDef Y100M_OpenTcpSession(void)
   HAL_StatusTypeDef status;
   uint32_t start_tick;
 
-  status = Y100M_SendAtExpect("AT+CIPSTART=\"TCP\",\"82.157.204.124\",1883",
-                              "OK",
-                              Y100M_AT_TCP_OPEN_TIMEOUT_MS);
+ char command[96];
+
+(void)snprintf(command,
+               sizeof(command),
+               "AT+CIPSTART=\"TCP\",\"%s\",%u",
+               Y100M_MQTT_BROKER,
+               (unsigned int)Y100M_MQTT_PORT);
+
+status = Y100M_SendAtExpect(command,
+                           "OK",
+                           Y100M_AT_TCP_OPEN_TIMEOUT_MS);
+                           
   if (status != HAL_OK)
   {
     return status;
@@ -1270,22 +1277,6 @@ void Y100M_BootstrapOnce(void)
 {
   HAL_StatusTypeDef status;
 
-#if (Y100M_DTU_TRANSPARENT_MODE != 0U)
-  /* The DTU keeps its own MQTT session (auth, heartbeat, reconnect). Sending
-   * any AT byte here would publish that text to fsae/telemetry as payload, so
-   * the whole AT bootstrap is skipped. Publish may start immediately: the DTU
-   * buffers serial data while its network is still coming up.
-   */
-  if (g_y100mBootstrapDone == 0U)
-  {
-    g_y100mBootstrapDone = 1U;
-    g_y100mBootstrapOk = 1U;
-    Y100M_Uart1DrainRx();
-    Y100M_DebugLog("[4G] DTU transparent mode: skip AT bootstrap, uplink enabled\r\n");
-  }
-  return;
-#endif
-
   if (g_y100mBootstrapDone != 0U)
   {
     return;
@@ -1328,18 +1319,6 @@ HAL_StatusTypeDef Y100M_MqttPublish(const uint8_t *payload, uint16_t payload_len
   uint16_t offset;
   HAL_StatusTypeDef status;
   static const uint8_t topic[] = "fsae/telemetry";
-
-#if (Y100M_DTU_TRANSPARENT_MODE != 0U)
-  /* Transparent mode: the DTU publishes every USART1 byte to its configured
-   * topic (fsae/telemetry), so the protobuf payload is sent as-is. No MQTT
-   * PUBLISH framing and no AT+CIPSEND on this route.
-   */
-  if ((payload == NULL) || (payload_length == 0U) || (g_y100mBootstrapOk == 0U))
-  {
-    return HAL_ERROR;
-  }
-  return Y100M_Uart1DmaSend(payload, payload_length, Y100M_AT_CMD_TIMEOUT_MS);
-#endif
 
   Y100M_DebugLog("[4G-PUB] enter mqtt publish\r\n");
 

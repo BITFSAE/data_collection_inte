@@ -40,15 +40,7 @@ extern UART_HandleTypeDef huart2;
 extern UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN Private defines */
-/* Select the USART1 4G uplink hardware:
- * 1 = USR DTU (e.g. USR-DR154) in MQTT transparent mode. The DTU owns the
- *     broker connection/auth/heartbeat for bitfsae.com and publishes every
- *     USART1 byte to its configured topic (fsae/telemetry). The firmware must
- *     not send any AT byte in this mode - it would be published as payload.
- * 0 = legacy Route-A: firmware runs the AT/TCP bootstrap itself and builds
- *     MQTT CONNECT/PUBLISH packets over AT+CIPSEND (broker 82.157.204.124).
- */
-#define Y100M_DTU_TRANSPARENT_MODE 1U
+
 /* USER CODE END Private defines */
 
 void MX_USART1_UART_Init(void);
