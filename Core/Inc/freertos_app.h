@@ -9,8 +9,6 @@ extern "C" {
 #include "cmsis_os2.h"
 
 #define APP_UART_TX_MAX_PAYLOAD        288U
-#define DEBUG_QUEUE_DEPTH       32U
-#define MLX_LINE_BUFFER_SIZE    APP_UART_TX_MAX_PAYLOAD
 #define RS485_DMA_BUFFER_SIZE    256U
 #define RS485_FLAG_RX_READY      (1UL << 0)
 #define RS485_FLAG_RX_RESTART    (1UL << 1)
@@ -36,7 +34,7 @@ extern osThreadId_t TensionSensorHandle;
 extern osThreadId_t SPICanControlHandle;
 extern osThreadId_t SPICanCDCHandle;
 extern osThreadId_t Publish4GHandle;
-extern osThreadId_t VehicleCanTxHandle;
+extern osThreadId_t CanBTextHandle;
 extern osThreadId_t initTaskBootHandle;
 
 extern osMessageQueueId_t CAN_Msg_QueueHandle;
@@ -54,8 +52,10 @@ void TensionSensorTask(void *argument);
 void SPICanControlTask(void *argument);
 void SPICanCDCTask(void *argument);
 void Publish4GTask(void *argument);
-void VehicleCanTxTask(void *argument);
+void CanBTextTask(void *argument);
 void InitTask_Boot(void *argument);
+
+
 
 #ifdef __cplusplus
 }
